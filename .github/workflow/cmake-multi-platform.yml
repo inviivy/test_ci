@@ -1,0 +1,83 @@
+name: CMake on multiple platforms
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            c_compiler: cl
+            cpp_compiler: cl
+            build_type: Release
+          - os: ubuntu-latest
+            c_compiler: gcc
+            cpp_compiler: g++
+            build_type: Release
+          - os: ubuntu-latest
+            c_compiler: clang
+            cpp_compiler: clang++
+            build_type: Release
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set reusable strings
+      id: strings
+      shell: bash
+      run: |
+        echo "source-dir=${{ github.workspace }}" >> "${GITHUB_OUTPUT}"
+        echo "build-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
+        echo "install-dir=${{ github.workspace }}/install" >> "$GITHUB_OUTPUT"
+        echo "tests-source-dir=${{ github.workspace }}/tests" >> "$GITHUB_OUTPUT"
+        echo "tests-build-dir=${{ github.workspace }}/tests/build" >> "$GITHUB_OUTPUT"
+
+    - name: Configure CMake
+      run: >
+        cmake
+        -S ${{ steps.strings.outputs.source-dir }}
+        -B ${{ steps.strings.outputs.build-dir }}
+        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
+        -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
+
+    - name: Build
+      run: cmake --build ${{ steps.strings.outputs.build-dir }} --config ${{ matrix.build_type }}
+
+    - name: Test
+      working-directory: ${{ steps.strings.outputs.build-dir }}
+      run: ctest --build-config ${{ matrix.build_type }}
+
+    - name: Install
+      run: >
+        cmake
+        --install ${{ steps.strings.outputs.build-dir }}
+        --config ${{ matrix.build_type }}
+        --prefix ${{ steps.strings.outputs.install-dir }}
+
+    - name: Configure Tests Standalone
+      run: >
+        cmake
+        -S ${{ steps.strings.outputs.tests-source-dir }}
+        -B ${{ steps.strings.outputs.tests-build-dir }}
+        -DCMAKE_PREFIX_PATH=${{ steps.strings.outputs.install-dir }}
+        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
+        -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
+
+    - name: Build Tests Standalone
+      run: cmake --build ${{ steps.strings.outputs.tests-build-dir }} --config ${{ matrix.build_type }}
+
+    - name: Test Tests Standalone
+      working-directory: ${{ steps.strings.outputs.tests-build-dir }}
+      run: ctest --build-config ${{ matrix.build_type }}
